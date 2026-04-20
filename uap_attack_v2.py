@@ -42,8 +42,8 @@ def get_parser() -> ArgumentParser:
     parser.add_argument('--loss_fea', action='store_true')
     parser.add_argument('--loss_diff', action='store_true')
     parser.add_argument('--loss_t', action='store_true')
-    parser.add_argument('--target_image_dir', default='./data/sav_val/JPEGImages_24fps',
-                        help='Real SA-V distractor dir (must not overlap with train or eval pool)')
+    parser.add_argument('--target_image_dir', default='./data/sav_test/JPEGImages_24fps',
+                        help='Real SA-V distractor dir (paper uses sav_test split; must not overlap with YT-VOS train/eval)')
     parser.add_argument('--out_suffix', default='v2',
                         help='Output file suffix: uap_file/{train_dataset}_{out_suffix}.pth')
     return parser

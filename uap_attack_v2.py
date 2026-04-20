@@ -92,25 +92,35 @@ if __name__ == '__main__':
     target_image_dir = args.target_image_dir
     assert os.path.isdir(target_image_dir), f"SA-V distractor dir not found: {target_image_dir}"
 
-    folders = [f for f in os.listdir(target_image_dir) if os.path.isdir(os.path.join(target_image_dir, f))]
+    # Strict SA-V whitelist: folder names must match ^sav_\d{6}$.
+    # Fail hard on any mixed/suspicious content (Codex R2 feedback: loose prefix check
+    # would let quarantined YT-VOS folders leak in if anyone re-added them).
+    SAV_PATTERN = re.compile(r'^sav_\d{6}$')
+    all_entries = sorted(os.listdir(target_image_dir))  # sort for reproducibility (same seed -> same sample)
+    folders = [f for f in all_entries if os.path.isdir(os.path.join(target_image_dir, f))]
+    bad = [f for f in folders if not SAV_PATTERN.match(f)]
+    if bad:
+        raise RuntimeError(
+            f"[contamination-guard] {len(bad)}/{len(folders)} folders in {target_image_dir} "
+            f"do not match strict SA-V pattern ^sav_\\d{{6}}$. "
+            f"Bad examples: {bad[:5]}. Refusing to train on contaminated distractor pool.")
+    if len(folders) < args.fea_num:
+        raise RuntimeError(
+            f"Only {len(folders)} SA-V folders available, need --fea_num={args.fea_num}")
 
-    # Contamination guard: SA-V folder IDs must not overlap with the YT-VOS train/eval pool.
-    # Real SA-V IDs are 'sav_*'; YT-VOS IDs are 10-char hex. If any folder looks like YT-VOS, abort.
-    suspicious = [f for f in folders if not f.startswith('sav_')]
-    if suspicious:
-        print(f"[contamination-guard] WARNING: {len(suspicious)} folders do not look like SA-V IDs "
-              f"(expected 'sav_*', found e.g. {suspicious[:3]}). "
-              f"This may be a mislabeled dir.")
-        if len(suspicious) == len(folders):
-            raise RuntimeError(
-                f"All {len(folders)} folders in {target_image_dir} look like non-SA-V (YT-VOS) IDs. "
-                f"Refusing to train with contaminated distractor pool.")
+    # Sample fea_num folders (seeded, deterministic due to sorted `folders`).
+    selected_folders = random.sample(folders, args.fea_num)
 
-    if len(folders) >= args.fea_num:
-        selected_folders = random.sample(folders, args.fea_num)
-    else:
-        selected_folders = folders
+    # Preflight: every selected folder must have ≥1 image. Empty folders would cause
+    # silent video-skip in the main loop (Codex R2: makes training set nondeterministic
+    # against disk state).
+    for f in selected_folders:
+        fp = os.path.join(target_image_dir, f)
+        imgs = [x for x in os.listdir(fp) if x.endswith(('.png', '.jpg', '.jpeg'))]
+        if not imgs:
+            raise RuntimeError(f"Selected SA-V folder {f} has no images; preflight failed.")
     print(f"[target] dir={target_image_dir}  total_folders={len(folders)}  using={len(selected_folders)}")
+    print(f"[target] preflight OK: every selected folder has ≥1 image")
 
     for step in range(args.P_num):
         ema_grad = None
@@ -127,18 +137,20 @@ if __name__ == '__main__':
 
             folder = random.choice(selected_folders)
             folder_path = os.path.join(target_image_dir, folder)
-            image_files = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if f.endswith(('.png', '.jpg', '.jpeg'))]
-            if image_files:
-                image_path = random.choice(image_files)
-                image = Image.open(image_path).convert("RGB")
-                image = image.resize((1024, 1024), Image.Resampling.BICUBIC)
-                image = np.array(image)
-                tgt = sam_fwder.transform_image(image).to(device)
-                tgt = denorm(tgt)
-                target_feature = sam_fwder.get_image_feature(tgt)
-            else:
-                print("No images found in the selected folder.")
-                continue
+            # Sort for determinism: random.choice over an unsorted os.listdir() result
+            # would give different picks across filesystems / remounts.
+            image_files = sorted([os.path.join(folder_path, f) for f in os.listdir(folder_path)
+                                  if f.endswith(('.png', '.jpg', '.jpeg'))])
+            if not image_files:
+                # Preflight should have caught this; defensive re-check.
+                raise RuntimeError(f"Selected folder {folder} lost its images between preflight and use.")
+            image_path = random.choice(image_files)
+            image = Image.open(image_path).convert("RGB")
+            image = image.resize((1024, 1024), Image.Resampling.BICUBIC)
+            image = np.array(image)
+            tgt = sam_fwder.transform_image(image).to(device)
+            tgt = denorm(tgt)
+            target_feature = sam_fwder.get_image_feature(tgt)
 
             video_subset = Subset(custom_dataset, indices)
             video_loader = DataLoader(video_subset, batch_size=1, collate_fn=collate_fn, shuffle=False, num_workers=0)
@@ -253,6 +265,7 @@ if __name__ == '__main__':
             print(f"[step {step}] EMA-sign flip rate: {sign_flip_count/sign_total:.4%} "
                   f"(low rate = saturation/frozen update; healthy rate ~1-20%)")
 
+    os.makedirs("uap_file", exist_ok=True)  # Codex R2 nice-to-have: never fail at save
     uap_save_path = f"uap_file/{args.train_dataset}_{args.out_suffix}.pth"
     torch.save(perturbation.cpu(), uap_save_path)
     print(f"\n Global UAP saved to {uap_save_path}")

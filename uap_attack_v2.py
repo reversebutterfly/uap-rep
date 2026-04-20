@@ -148,9 +148,13 @@ if __name__ == '__main__':
             image = Image.open(image_path).convert("RGB")
             image = image.resize((1024, 1024), Image.Resampling.BICUBIC)
             image = np.array(image)
-            tgt = sam_fwder.transform_image(image).to(device)
-            tgt = denorm(tgt)
-            target_feature = sam_fwder.get_image_feature(tgt)
+            # target_feature is a constant distractor feature used only as InfoNCE
+            # negative. Compute under no_grad to avoid keeping an autograd graph
+            # alive for the whole video (~8 GB per graph on 1024x1024).
+            with torch.no_grad():
+                tgt = sam_fwder.transform_image(image).to(device)
+                tgt = denorm(tgt)
+                target_feature = sam_fwder.get_image_feature(tgt).detach()
 
             video_subset = Subset(custom_dataset, indices)
             video_loader = DataLoader(video_subset, batch_size=1, collate_fn=collate_fn, shuffle=False, num_workers=0)
@@ -178,13 +182,16 @@ if __name__ == '__main__':
                 transform2 = transforms.Lambda(lambda img: img + 0.03 * torch.rand_like(img))
                 transform3 = transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.08)
 
-                aug_img1 = transform1(benign_img)
-                aug_img2 = transform2(benign_img)
-                aug_img3 = transform3(benign_img)
-
-                img_list = [aug_img1, aug_img2, aug_img3]
-                prototype_feature = get_fused_prototype(img_list, sam_fwder, device)
-                prototype_feature = prototype_feature.to(device)
+                # prototype_feature is the InfoNCE positive anchor built from augmented
+                # benign views. It feeds loss_fea but we do NOT backprop into it (only
+                # adv_feature carries grad). Wrap under no_grad to avoid multiplying
+                # the per-frame memory footprint by 3 (three augmented forward passes).
+                with torch.no_grad():
+                    aug_img1 = transform1(benign_img)
+                    aug_img2 = transform2(benign_img)
+                    aug_img3 = transform3(benign_img)
+                    img_list = [aug_img1, aug_img2, aug_img3]
+                    prototype_feature = get_fused_prototype(img_list, sam_fwder, device).to(device).detach()
 
                 if not start_frame_processed:
                     start_frame_idx = frame_idx
@@ -198,24 +205,34 @@ if __name__ == '__main__':
                 prompts = make_multi_prompts(args.point, (1024, 1024), args.prompts_num)
                 P = sam_fwder.transform_prompts(*prompts)
 
-                logits_clean = sam_fwder.forward(benign_img, *P)
-                mask_clean = logits_clean > sam_fwder.mask_threshold
-
-                mask_pre = mask_clean.clone().detach()
-                output_dict = sam_fwder.get_current_out(frame_idx, benign_img, mask_pre)
+                # Clean-branch logits: no grad needed (used only to build mask_pre for
+                # the predictor's memory bank via get_current_out).
+                with torch.no_grad():
+                    logits_clean = sam_fwder.forward(benign_img, *P)
+                    mask_clean = logits_clean > sam_fwder.mask_threshold
+                    mask_pre = mask_clean.clone().detach()
+                    # get_current_out re-runs the image encoder; wrap under no_grad too.
+                    output_dict = sam_fwder.get_current_out(frame_idx, benign_img, mask_pre)
                 pre_dict = output_dict
 
                 adv_img = benign_img + perturbation
                 adv_img = torch.clamp(adv_img, 0, 1)
                 adv_img.requires_grad = True
 
+                # adv-branch logits: graph REQUIRED for grad(loss, adv_img).
                 logits = sam_fwder.forward(adv_img, *P)
                 mask = logits > sam_fwder.mask_threshold
-
                 mask_pre_adv = mask.clone().detach()
-                output_dict_adv = sam_fwder.get_current_out(frame_idx, adv_img, mask_pre_adv)
+
+                # Note: output_dict_adv is stored in predictor state for future frames but
+                # gradients do NOT need to flow through it — the attack loss uses `logits`
+                # and `adv_feature` directly. Detach adv_img inside a no_grad block so the
+                # second encoder forward doesn't build a redundant 8GB graph.
+                with torch.no_grad():
+                    output_dict_adv = sam_fwder.get_current_out(frame_idx, adv_img.detach(), mask_pre_adv)
                 pre_dict_adv = output_dict_adv
 
+                # adv_feature: graph REQUIRED (used in loss_fea via infonce_loss).
                 adv_feature = sam_fwder.get_image_feature(adv_img)
 
 
@@ -260,6 +277,18 @@ if __name__ == '__main__':
                     sign_total += prev_sign.numel()
                 perturbation = (perturbation - args.alpha * ema_grad.sign()).clamp(-args.eps, args.eps).detach()
                 prev_adv_feature = adv_feature.detach()
+
+                # Release per-frame graph tensors so the autograd allocator can reclaim.
+                del g, loss, logits, logits_clean, adv_feature, adv_img
+
+            # End-of-video cache cleanup: the predictor's memory bank (pre_dict_adv)
+            # and any SAM2 internal state can accumulate across frames; release them
+            # and empty the CUDA cache before the next video.
+            pre_dict = None
+            pre_dict_adv = None
+            mask_pre = None
+            mask_pre_adv = None
+            torch.cuda.empty_cache()
 
         if sign_total > 0:
             print(f"[step {step}] EMA-sign flip rate: {sign_flip_count/sign_total:.4%} "

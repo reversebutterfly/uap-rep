@@ -226,10 +226,11 @@ if __name__ == '__main__':
 
                 # Note: output_dict_adv is stored in predictor state for future frames but
                 # gradients do NOT need to flow through it — the attack loss uses `logits`
-                # and `adv_feature` directly. Detach adv_img inside a no_grad block so the
-                # second encoder forward doesn't build a redundant 8GB graph.
+                # and `adv_feature` directly. Wrap in no_grad so the second encoder forward
+                # doesn't build a redundant 8GB graph (passing adv_img without .detach()
+                # because SAM2 may track tensor identity for its memory-bank state).
                 with torch.no_grad():
-                    output_dict_adv = sam_fwder.get_current_out(frame_idx, adv_img.detach(), mask_pre_adv)
+                    output_dict_adv = sam_fwder.get_current_out(frame_idx, adv_img, mask_pre_adv)
                 pre_dict_adv = output_dict_adv
 
                 # adv_feature: graph REQUIRED (used in loss_fea via infonce_loss).
@@ -278,17 +279,14 @@ if __name__ == '__main__':
                 perturbation = (perturbation - args.alpha * ema_grad.sign()).clamp(-args.eps, args.eps).detach()
                 prev_adv_feature = adv_feature.detach()
 
-                # Release per-frame graph tensors so the autograd allocator can reclaim.
-                del g, loss, logits, logits_clean, adv_feature, adv_img
-
-            # End-of-video cache cleanup: the predictor's memory bank (pre_dict_adv)
-            # and any SAM2 internal state can accumulate across frames; release them
-            # and empty the CUDA cache before the next video.
+            # End-of-video: clear Python refs to predictor state so next video starts fresh.
+            # Note: removed torch.cuda.empty_cache() and explicit `del` — prior attempt
+            # triggered CUDA illegal memory access, likely because SAM2's memory bank held
+            # internal references to tensors we'd eagerly freed. Rely on Python GC + no_grad.
             pre_dict = None
             pre_dict_adv = None
             mask_pre = None
             mask_pre_adv = None
-            torch.cuda.empty_cache()
 
         if sign_total > 0:
             print(f"[step {step}] EMA-sign flip rate: {sign_flip_count/sign_total:.4%} "

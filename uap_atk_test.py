@@ -179,3 +179,4 @@ if __name__ == '__main__':
     video_test, miouimg, miouadv,frames_clean_test,frames_adv_test,frames_train= run(args, custom_dataset)
     print(f":: miouimg: {miouimg * 100:.2f} %, miouadv: {miouadv * 100:.2f} %, video_test: {video_test} , frame_clean_test:{frames_clean_test} , frames_adv_test:{frames_adv_test},frame_train:{frames_train}")
 
+    import sys; sys.stdout.flush()

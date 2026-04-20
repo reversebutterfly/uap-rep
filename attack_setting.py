@@ -17,7 +17,7 @@ from numpy.typing import NDArray
 from sam2.utils.misc import fill_holes_in_mask_scores
 import torch.nn.functional as F
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "4,2"  # patched: cuda:0=GPU4, cuda:1=GPU2
 
 npimg_u8  = NDArray[np.uint8]
 Size      = Tuple[int, int]

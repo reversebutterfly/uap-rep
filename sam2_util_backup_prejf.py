@@ -21,7 +21,6 @@ from typing import *
 from attack_setting import SamForwarder, seed_everything
 from dataset_YOUTUBE import Dataset_YOUTUBE, Dataset_YOUTUBE_IMAGE
 from sam2.build_sam import build_sam2_video_predictor
-from metrics_jf import jf_score
 
 Data = Union[np.ndarray, Tensor]
 DATA_ROOT_VIDEO_YOUTUBE = Path("./data/YOUTUBE/train/JPEGImages")
@@ -196,10 +195,6 @@ def process_videos_test(video_root_dir, output_dir, mask_gt_dict, start_P_dict, 
     seed_everything(seed=args.seed)
     total_iou = 0
     iou_count = 0
-    total_j = 0.0
-    total_f = 0.0
-    total_jf = 0.0
-    jf_count = 0
 
     if skipped_frames is None:
         skipped_frames = set()
@@ -296,30 +291,17 @@ def process_videos_test(video_root_dir, output_dir, mask_gt_dict, start_P_dict, 
                 iou_count += 1
                 print(f"IoU for {category} {video_name}, frame {out_frame_idx}, object {out_obj_id}: {iou_img:.4f}")
                 print(f"Current iou_count: {iou_count}")
-                try:
-                    mask_pred_sq = np.array(out_mask).squeeze()
-                    mask_gt_sq   = np.array(mask_gt).squeeze()
-                    jf, j, f = jf_score(mask_pred_sq, mask_gt_sq)
-                    total_j  += j
-                    total_f  += f
-                    total_jf += jf
-                    jf_count += 1
-                except Exception as _e:
-                    print(f"[jf] skip frame: {_e}")
 
             if args.save_img_with_mask:
                 os.makedirs(output_dir, exist_ok=True)
                 save_prefix = "clean" if category == "clean" else "adv"
                 save_path = os.path.join(output_dir, f"{video_name}_{save_prefix}_frame_{out_frame_idx:04d}.jpg")
                 plt.savefig(save_path)
-            plt.close(fig)
+                plt.close(fig)
 
     avg_iou = total_iou / iou_count if iou_count > 0 else 0
-    avg_j   = total_j  / jf_count  if jf_count  > 0 else 0.0
-    avg_f   = total_f  / jf_count  if jf_count  > 0 else 0.0
-    avg_jf  = total_jf / jf_count  if jf_count  > 0 else 0.0
 
-    return avg_iou, iou_count, skipped_frames, avg_jf, avg_j, avg_f
+    return avg_iou, iou_count, skipped_frames
 
 def collate_fn(batch):
     buffer_list, P_list, sample_id,gt ,point = zip(*batch)

@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+data/
+checkpoints/
+uap_file/
+adv/
+adv_heldout/
+adv_heldout_jpeg/
+clean/
+clean_heldout/
+clean_heldout_jpeg/
+*.log

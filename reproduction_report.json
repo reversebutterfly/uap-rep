@@ -1,0 +1,37 @@
+{
+  "date": "2026-03-31",
+  "repo": "CGCL-codes/UAP-SAM2",
+  "commit": "779ce0b7ebb8cc09fb712c46c555099f6a99e08f",
+  "environment": {
+    "python": "3.8.20",
+    "pytorch": "2.4.0+cu121",
+    "sam2_version": "1.0 (sam2_hiera_tiny.pt, 38,946,242 params)",
+    "checkpoint": "sam2_hiera_tiny.pt (official SAM2 1.0)"
+  },
+  "training_settings": {
+    "dataset": "YouTube-VOS train (3471 videos)",
+    "eps": "10/255",
+    "alpha": "2/255",
+    "P_num": 10,
+    "prompts_num": 256,
+    "limit_img": 100,
+    "limit_frames": 15,
+    "fea_num": 30,
+    "losses": "loss_t + loss_diff (loss_fea excluded: SA-V unavailable on server)",
+    "device": "cuda:1",
+    "seed": 30
+  },
+  "deviations_from_strict": [
+    "SA-V substituted with YouTube-VOS valid frames (server network blocked HuggingFace); loss_fea excluded (weight=1e-6 anyway)"
+  ],
+  "results": {
+    "miou_clean_pct": null,
+    "miou_adv_pct": null,
+    "iou_count": null
+  },
+  "paper_targets": {
+    "miou_adv_pt_youtube": 37.03,
+    "miou_clean_youtube": "~82.8 (inferred from Fig. 6)"
+  },
+  "uap_path": "/IMBR_Data/Student-home/2025M_LvShaoting/UAP-SAM2/uap_file/YOUTUBE.pth"
+}

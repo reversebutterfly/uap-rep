@@ -10,3 +10,6 @@ clean/
 clean_heldout/
 clean_heldout_jpeg/
 *.log
+
+*.bak
+results/

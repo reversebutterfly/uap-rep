@@ -45,7 +45,7 @@ TRAIN_VIDEO_IDS_PATH = (
     "sam2_privacy_preprocessor/refine-logs/train_video_ids.json"
     if (Path(__file__).parent.parent /
         "sam2_privacy_preprocessor/refine-logs/train_video_ids.json").exists()
-    else Path("/IMBR_Data/Student-home/2025M_LvShaoting/"
+    else Path(str(Path(__file__).parent.parent) + "/"
               "sam2_privacy_preprocessor/refine-logs/train_video_ids.json")
 )
 
@@ -327,7 +327,7 @@ if __name__ == "__main__":
 
     # ── Save eval video IDs ───────────────────────────────────────────────────
     eval_ids_path = Path(
-        "/IMBR_Data/Student-home/2025M_LvShaoting/"
+        str(Path(__file__).parent.parent) + "/"
         "sam2_privacy_preprocessor/refine-logs/eval_heldout_jpeg_video_ids.json"
     )
     eval_ids_path.parent.mkdir(parents=True, exist_ok=True)
@@ -365,7 +365,7 @@ if __name__ == "__main__":
         results_path = Path(args.results_out)
     else:
         results_path = Path(
-            "/IMBR_Data/Student-home/2025M_LvShaoting/"
+            str(Path(__file__).parent.parent) + "/"
             "sam2_privacy_preprocessor/refine-logs/heldout_jpeg_results.json"
         )
     results_path.parent.mkdir(parents=True, exist_ok=True)

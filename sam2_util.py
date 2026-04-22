@@ -31,6 +31,8 @@ DATA_ROOT_VIDEO_YOUTUBE_VALID = Path("./data/YOUTUBE/valid/JPEGImages")
 DATA_ROOT_VIDEO_DAVIS = Path("./data/DAVIS/JPEGImages/480p")
 DATA_ROOT_ANN_DAVIS = Path("./data/DAVIS/Annotations/480p")
 DAVIS_VAL_LIST = Path("./data/DAVIS/ImageSets/2017/val.txt")
+DATA_ROOT_VIDEO_MOSE_TRAIN = Path("./data/MOSE/train/JPEGImages")
+DATA_ROOT_ANN_MOSE_TRAIN = Path("./data/MOSE/train/Annotations")
 
 def load_model(args,device = "cuda:1"):
     if args.checkpoints == 'sam2-t':
@@ -159,6 +161,49 @@ def choose_dataset(args = None):
         sample_ids = [item for sublist in video_sample_ids.values() for item in sublist]
         json_path = "./img_dataset/YOUTUBE/train/Annotations"
         custom_dataset = Dataset_YOUTUBE_IMAGE(sample_ids, DATA_ROOT_IMAGE_YOUTUBE, json_path, args=args, start_frames=start_frames)
+    return custom_dataset
+
+
+def choose_mose_train_dataset(args=None):
+    """MOSE train split loader (1507 videos, dense per-frame annotations).
+
+    Paper trains on YouTube but evaluates on MOSE, and the MOSE val split has
+    first-frame-only annotations — so dense-GT evaluation requires the train
+    split even though the name is misleading. This matches the paper's protocol
+    (100 videos x 15 consecutive frames with mIoU per frame).
+    """
+    if not DATA_ROOT_VIDEO_MOSE_TRAIN.exists():
+        raise FileNotFoundError(
+            f"MOSE train missing at {DATA_ROOT_VIDEO_MOSE_TRAIN}; "
+            "download MOSE_release.zip and extract train.tar.gz")
+    video_dirs = [v for v in DATA_ROOT_VIDEO_MOSE_TRAIN.iterdir() if v.is_dir()]
+    video_dirs.sort(key=lambda x: x.name, reverse=True)
+    num_samples = len(video_dirs) if args.limit_img == -1 else min(max(args.limit_img, 0), len(video_dirs))
+    video_dirs = random.sample(video_dirs, num_samples)
+    video_sample_ids = {}
+    start_frames = {}
+    for video_dir in video_dirs:
+        if video_dir.is_dir():
+            frames = [f"{video_dir.name}/{fp.stem}" for fp in video_dir.iterdir() if fp.is_file()]
+            frames.sort()
+            if frames:
+                first_frame_name = os.path.basename(frames[0].split('/')[-1])
+                try:
+                    start_frame_idx = int(first_frame_name.lstrip('0') or '0')
+                    start_frames[video_dir.name] = start_frame_idx
+                except ValueError:
+                    start_frames[video_dir.name] = None
+            if args.limit_frames > 0 and len(frames) >= args.limit_frames:
+                step = max(1, len(frames) // args.limit_frames)
+                selected_frames = frames[::step][:args.limit_frames]
+            else:
+                selected_frames = frames
+            selected_frames = selected_frames[::-1]
+            video_sample_ids[video_dir.name] = selected_frames
+    sample_ids = [item for sublist in video_sample_ids.values() for item in sublist]
+    custom_dataset = Dataset_DAVIS(
+        sample_ids, DATA_ROOT_VIDEO_MOSE_TRAIN, str(DATA_ROOT_ANN_MOSE_TRAIN),
+        args=args, start_frames=start_frames)
     return custom_dataset
 
 

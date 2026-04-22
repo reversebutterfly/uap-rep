@@ -20,6 +20,7 @@ from typing import *
 
 from attack_setting import SamForwarder, seed_everything
 from dataset_YOUTUBE import Dataset_YOUTUBE, Dataset_YOUTUBE_IMAGE
+from dataset_DAVIS import Dataset_DAVIS
 from sam2.build_sam import build_sam2_video_predictor
 from metrics_jf import jf_score
 
@@ -27,6 +28,9 @@ Data = Union[np.ndarray, Tensor]
 DATA_ROOT_VIDEO_YOUTUBE = Path("./data/YOUTUBE/train/JPEGImages")
 DATA_ROOT_IMAGE_YOUTUBE = Path("./dataset/YOUTUBE/train/JPEGImages")
 DATA_ROOT_VIDEO_YOUTUBE_VALID = Path("./data/YOUTUBE/valid/JPEGImages")
+DATA_ROOT_VIDEO_DAVIS = Path("./data/DAVIS/JPEGImages/480p")
+DATA_ROOT_ANN_DAVIS = Path("./data/DAVIS/Annotations/480p")
+DAVIS_VAL_LIST = Path("./data/DAVIS/ImageSets/2017/val.txt")
 
 def load_model(args,device = "cuda:1"):
     if args.checkpoints == 'sam2-t':
@@ -155,6 +159,45 @@ def choose_dataset(args = None):
         sample_ids = [item for sublist in video_sample_ids.values() for item in sublist]
         json_path = "./img_dataset/YOUTUBE/train/Annotations"
         custom_dataset = Dataset_YOUTUBE_IMAGE(sample_ids, DATA_ROOT_IMAGE_YOUTUBE, json_path, args=args, start_frames=start_frames)
+    return custom_dataset
+
+
+def choose_davis_dataset(args=None):
+    """DAVIS 2017 val split loader. Mirrors choose_heldout_dataset structure."""
+    if not DAVIS_VAL_LIST.exists():
+        raise FileNotFoundError(
+            f"DAVIS val list missing at {DAVIS_VAL_LIST}; "
+            "rsync DAVIS from a source with ImageSets/2017/val.txt")
+    val_names = [ln.strip() for ln in DAVIS_VAL_LIST.read_text().splitlines() if ln.strip()]
+    video_dirs = [DATA_ROOT_VIDEO_DAVIS / name for name in val_names
+                  if (DATA_ROOT_VIDEO_DAVIS / name).is_dir()]
+    video_dirs.sort(key=lambda x: x.name, reverse=True)
+    num_samples = len(video_dirs) if args.limit_img == -1 else min(max(args.limit_img, 0), len(video_dirs))
+    video_dirs = random.sample(video_dirs, num_samples)
+    video_sample_ids = {}
+    start_frames = {}
+    for video_dir in video_dirs:
+        if video_dir.is_dir():
+            frames = [f"{video_dir.name}/{fp.stem}" for fp in video_dir.iterdir() if fp.is_file()]
+            frames.sort()
+            if frames:
+                first_frame_name = os.path.basename(frames[0].split('/')[-1])
+                try:
+                    start_frame_idx = int(first_frame_name.lstrip('0') or '0')
+                    start_frames[video_dir.name] = start_frame_idx
+                except ValueError:
+                    start_frames[video_dir.name] = None
+            if args.limit_frames > 0 and len(frames) >= args.limit_frames:
+                step = max(1, len(frames) // args.limit_frames)
+                selected_frames = frames[::step][:args.limit_frames]
+            else:
+                selected_frames = frames
+            selected_frames = selected_frames[::-1]
+            video_sample_ids[video_dir.name] = selected_frames
+    sample_ids = [item for sublist in video_sample_ids.values() for item in sublist]
+    custom_dataset = Dataset_DAVIS(
+        sample_ids, DATA_ROOT_VIDEO_DAVIS, str(DATA_ROOT_ANN_DAVIS),
+        args=args, start_frames=start_frames)
     return custom_dataset
 
 

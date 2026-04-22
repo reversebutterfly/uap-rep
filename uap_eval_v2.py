@@ -35,7 +35,7 @@ import torch
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 
-from sam2_util import (get_frame_index, save_image_only, choose_dataset,
+from sam2_util import (choose_davis_dataset, get_frame_index, save_image_only, choose_dataset,
                        choose_heldout_dataset, collate_fn,
                        get_video_to_indices, load_model, process_videos_test)
 from attack_setting import seed_everything
@@ -56,13 +56,16 @@ def select_dataset(args):
 
     YOUTUBE       →  train split  (官方默认行为，in-sample)
     YOUTUBE_VALID →  valid split  (held-out)
+    DAVIS_VAL     →  DAVIS 2017 val split (30 videos, cross-dataset transfer)
     """
     if args.test_dataset == "YOUTUBE_VALID":
         print("[dataset] Using YouTube-VOS VALID split (held-out)")
         return choose_heldout_dataset(args)
-    else:
-        print("[dataset] Using YouTube-VOS TRAIN split (in-sample, official default)")
-        return choose_dataset(args)
+    if args.test_dataset == "DAVIS_VAL":
+        print("[dataset] Using DAVIS 2017 val split (cross-dataset transfer)")
+        return choose_davis_dataset(args)
+    print("[dataset] Using YouTube-VOS TRAIN split (in-sample, official default)")
+    return choose_dataset(args)
 
 
 def check_overlap(eval_video_ids: list, args) -> dict:
@@ -274,8 +277,10 @@ def get_parser() -> ArgumentParser:
     parser.add_argument("--train_dataset", default="YOUTUBE")
     parser.add_argument(
         "--test_dataset", default="YOUTUBE_VALID",
-        choices=["YOUTUBE", "YOUTUBE_VALID"],
-        help="YOUTUBE = train split (in-sample); YOUTUBE_VALID = valid split (held-out)")
+        choices=["YOUTUBE", "YOUTUBE_VALID", "DAVIS_VAL"],
+        help="YOUTUBE = YT-VOS train split (in-sample); "
+             "YOUTUBE_VALID = YT-VOS valid split (held-out); "
+             "DAVIS_VAL = DAVIS 2017 val (30 videos, cross-dataset transfer)")
     parser.add_argument("--point")
     parser.add_argument("--train_prompts", choices=["bx", "pt"], default="pt")
     parser.add_argument("--test_prompts", choices=["bx", "pt"], default="pt")

@@ -1,14 +1,16 @@
 {
-  "report_version": "2026-04-21-v2",
+  "report_version": "2026-04-22-v3",
   "original_date": "2026-03-31",
-  "updated_date": "2026-04-21",
+  "updated_date": "2026-04-22",
   "repo": "CGCL-codes/UAP-SAM2",
+  "paper_ref": "Zheng et al., NeurIPS 2025, arXiv 2510.24195 / OpenReview Ll29PmM3UH",
+  "reproduction_repo": "github.com/reversebutterfly/uap-rep (commit 335968c)",
   "commit": "779ce0b7ebb8cc09fb712c46c555099f6a99e08f",
 
   "environments": {
     "v100_primary": {
       "host": "IMBR-Server-TR2",
-      "gpus": "Tesla V100-PCIE-32GB x6 (shared; UAP training used GPU 5 or 4,2)",
+      "gpus": "Tesla V100-PCIE-32GB x6 (shared)",
       "python": "3.8.20",
       "pytorch": "2.4.0+cu121",
       "cuda_driver": "535.183.01 (CUDA 12.2 runtime)",
@@ -20,7 +22,7 @@
       "python": "3.11.15",
       "pytorch": "2.11.0+cu128",
       "cuda_driver": "580.126.20 (CUDA 13.0 runtime)",
-      "role": "held-out eval, migrated 2026-04-21"
+      "role": "held-out eval + cross-dataset eval"
     }
   },
 
@@ -42,7 +44,8 @@
     "losses": "loss_t + loss_diff + loss_fea",
     "distractor_pool": "SA-V test split (real, 150 clips), sampled 30 per step",
     "ema_beta": 0.95,
-    "outer_steps": 10
+    "outer_steps": 10,
+    "paper_spec_match": "prompts_num=256 matches paper's target-scanning m=256 optimum (Fig. 7b). Training epochs=10 matches paper 4.1. Seed=30 matches paper 4.1."
   },
 
   "code_fixes_vs_public_release": [
@@ -55,8 +58,8 @@
 
   "deviations_from_strict_paper_protocol": [
     "Exact 100-video training subset not reproducible from public artifacts (paper does not publish the list; we use seed=30 sample from YT-VOS train)",
-    "Paper's undocumented hyperparameters (schedule, number of epochs) not known",
-    "Pro 6000 host has different driver/pytorch - identical eval code, same UAP tensor; results should be deterministic modulo arch differences"
+    "Eval-time prompt generation procedure not detailed in paper beyond 'different and random'; public repo uses dataset-provided first-frame center point and we retain that default",
+    "Paper tests on 6 datasets (YouTube, DAVIS, MOSE + image-sampled variants); we have YT-VOS in/held-out and DAVIS val so far"
   ],
 
   "artifacts": {
@@ -64,22 +67,18 @@
       "description": "Original public-release optimizer path (pre-fixes), no loss_fea",
       "size_bytes": 12584092,
       "trained_on": "YT-VOS train, 100 videos, seed=30",
-      "training_date": "2026-03-31",
-      "v100_path": "/IMBR_Data/Student-home/2025M_LvShaoting/UAP-SAM2/uap_file/YOUTUBE.pth",
-      "pro6000_path": "~/UAP-SAM2/uap_file/YOUTUBE.pth"
+      "training_date": "2026-03-31"
     },
     "uap_file/YOUTUBE_v2.pth": {
-      "description": "Codex-fixed optimizer (R1+R2 fixes applied) + real SA-V distractors + all losses enabled",
+      "description": "Codex-fixed optimizer (R1+R2) + real SA-V distractors + all losses enabled",
       "size_bytes": 12584107,
       "trained_on": "YT-VOS train, 100 videos, seed=30",
       "training_date": "2026-04-20",
       "ema_sign_flip_rate_per_step_pct": [6.39, 6.41, 6.36, 6.35, 6.42, 6.34, 6.41, 6.45, 6.42, 6.42],
-      "tensor_stats": {"abs_max": "eps exactly", "pct_at_eps_boundary": 77.87},
-      "v100_path": "/IMBR_Data/Student-home/2025M_LvShaoting/UAP-SAM2/uap_file/YOUTUBE_v2.pth",
-      "pro6000_path": "~/UAP-SAM2/uap_file/YOUTUBE_v2.pth"
+      "tensor_stats": {"abs_max": "eps exactly", "pct_at_eps_boundary": 77.87}
     },
     "uap_file/YOUTUBE_fixed.pth": {
-      "description": "Intermediate (uap_attack_fixed.py on 2026-04-02); NEVER EVALUATED on either protocol; flags unknown; superseded by YOUTUBE_v2.pth",
+      "description": "Intermediate (2026-04-02); NEVER EVALUATED; superseded by YOUTUBE_v2.pth",
       "size_bytes": 12584122,
       "status": "quarantined"
     }
@@ -87,17 +86,18 @@
 
   "results_matrix": {
     "protocol_common": {
-      "limit_img": 100,
       "limit_frames": 15,
       "seed": 30,
       "P_num": 10,
       "prompts_num": 256,
       "clean_iou_filter": "<0.3 excluded",
-      "frame_format": "JPEG save-reload"
+      "frame_format": "JPEG save-reload",
+      "prompt_mode": "center (default, public-repo behavior)"
     },
     "in_domain_train_100": {
       "description": "Same 100 train videos used for UAP optimization; overlap_with_train=100/100",
       "host": "V100 GPU 5",
+      "limit_img": 100,
       "results": {
         "YOUTUBE.pth": {
           "j_clean_pct": 82.79,
@@ -120,62 +120,132 @@
     "held_out_valid_100": {
       "description": "YT-VOS valid split; overlap_with_train=0/100 verified",
       "host": "Pro 6000 GPU 1 (Blackwell)",
-      "date": "2026-04-21",
+      "limit_img": 100,
+      "blackwell_nondeterminism_note": "3 identical v2-center runs on Pro 6000 gave (68.34/30.02, 163 frames), (82.37/53.66, 89 frames), (64.33/29.66, 312 frames). cudnn.deterministic=True + seed=30 do NOT produce bit-identical results on sm_120 under torch 2.11. Filter is sensitive to tensor-core numeric jitter around clean-IoU=0.3 boundary; frame set therefore varies run to run.",
+      "results_v2_center_runs": [
+        {"date": "2026-04-21 16:03", "j_clean_pct": 68.34, "j_adv_pct": 30.02, "j_drop_pp": -38.32, "jf_drop_pp": -28.39, "frames": 163},
+        {"date": "2026-04-22 10:24", "j_clean_pct": 82.37, "j_adv_pct": 53.66, "j_drop_pp": -28.71, "jf_drop_pp": -26.74, "frames": 89},
+        {"date": "2026-04-22 11:31", "j_clean_pct": 64.33, "j_adv_pct": 29.66, "j_drop_pp": -34.67, "jf_drop_pp": -25.42, "frames": 312}
+      ],
+      "v2_center_mean_j_drop_pp": -33.90,
+      "v2_center_std_j_drop_pp": 3.96,
+      "results_v1_center_2026_04_21": {
+        "j_clean_pct": 68.34, "j_adv_pct": 34.79, "j_drop_pp": -33.55, "jf_drop_pp": -24.78, "frames": 163,
+        "note": "v1 not yet re-evaluated with variance sweep; single-sample number carries same Blackwell-nondeterminism caveat as the first v2 center run."
+      },
+      "prompt_ensemble_random_fg": {
+        "description": "5 seeds of random foreground-pixel prompt (paper says 'different and random' — see if paper uses something like this)",
+        "seeds": [
+          {"seed": 1, "j_clean": 59.78, "j_adv": 25.42, "j_drop": -34.36},
+          {"seed": 2, "j_clean": 59.81, "j_adv": 23.32, "j_drop": -36.49},
+          {"seed": 3, "j_clean": 69.35, "j_adv": 42.23, "j_drop": -27.12},
+          {"seed": 4, "j_clean": 60.17, "j_adv": 27.63, "j_drop": -32.54},
+          {"seed": 5, "j_clean": 61.67, "j_adv": 27.62, "j_drop": -34.05}
+        ],
+        "mean_j_drop": -32.91,
+        "std_j_drop": 3.52,
+        "verdict": "random_fg drops clean J to ~62 (vs paper's ~76 and our center ~82), so random_fg is NOT what paper used. rules out prompt-protocol drift as the main 17pp gap explanation."
+      }
+    },
+    "davis_val": {
+      "description": "DAVIS 2017 val split; 30 videos (all of val); target=instance id 1; cross-dataset transfer since UAP trained on YT-VOS",
+      "host": "Pro 6000 GPU 1 (Blackwell)",
+      "limit_img": 30,
+      "frames_filtered": 22,
+      "deterministic": "YES — 3 identical v2 runs gave bit-identical results on Pro 6000 (unlike YT-VOS valid). DAVIS is more robust because clean IoUs concentrate far above the 0.3 filter threshold, so tensor-core numeric jitter does not flip filter decisions.",
       "results": {
-        "YOUTUBE.pth": {
-          "j_clean_pct": 68.34,
-          "j_adv_pct": 34.79,
-          "j_drop_pp": -33.55,
-          "jf_clean_pct": 54.16,
-          "jf_adv_pct": 29.38,
-          "jf_drop_pp": -24.78,
-          "frames_clean": 163,
-          "frames_adv": 163
+        "YOUTUBE.pth (v1)": {
+          "j_clean_pct": 82.06,
+          "j_adv_pct": 56.51,
+          "j_drop_pp": -25.55,
+          "jf_clean_pct": 79.15,
+          "jf_adv_pct": 52.73,
+          "jf_drop_pp": -26.42
         },
         "YOUTUBE_v2.pth": {
-          "j_clean_pct": 68.34,
-          "j_adv_pct": 30.02,
-          "j_drop_pp": -38.32,
-          "jf_clean_pct": 54.16,
-          "jf_adv_pct": 25.77,
-          "jf_drop_pp": -28.39,
-          "frames_clean": 163,
-          "frames_adv": 163
+          "j_clean_pct": 82.06,
+          "j_adv_pct": 54.81,
+          "j_drop_pp": -27.25,
+          "jf_clean_pct": 79.15,
+          "jf_adv_pct": 51.60,
+          "jf_drop_pp": -27.55
         }
       }
     }
   },
 
   "v2_vs_v1_improvement_pp": {
-    "in_domain_j": 7.20,
-    "in_domain_jf": 6.15,
-    "held_out_j": 4.77,
-    "held_out_jf": 3.61,
-    "interpretation": "Codex's R1/R2 fixes + real SA-V distractors genuinely strengthen the attack under both protocols."
+    "in_domain_yt_j": 7.20,
+    "in_domain_yt_jf": 6.15,
+    "held_out_yt_j": "single-sample comparison insufficient (Blackwell RNG noise ~4pp); need v1 ensemble",
+    "davis_j": 1.70,
+    "davis_jf": 1.13,
+    "interpretation": "Codex R1/R2 fixes give genuine gain on YT-VOS in-domain (+7.2pp) but much smaller gain on DAVIS (+1.70pp). DAVIS clean J is already high with center prompt, so UAP has less headroom; this is consistent with paper Table 1 where D2 UAP-SAM2 is weaker than D1->D2 transfer."
   },
 
   "paper_targets": {
-    "miou_adv_pt_youtube": 37.03,
-    "miou_clean_youtube": "~82.8 (inferred from Fig. 6)",
-    "j_drop_pp": "~46",
-    "protocol_note": "Paper's headline appears to be in-domain (tested on training videos per public code)"
+    "source": "Table 1 of arXiv 2510.24195v1 (NeurIPS 2025)",
+    "sam2_variant_assumed": "SAM2-t (hiera tiny)",
+    "adv_miou_from_table_1": {
+      "UAP_trained_on_D1_YouTube": {
+        "test_D1_YouTube_video_pt": 37.03,
+        "test_D2_DAVIS_video_pt": 36.26,
+        "test_D3_MOSE_video_pt": 42.47,
+        "test_D1_YouTube_video_bx": 45.17,
+        "test_D2_DAVIS_video_bx": 28.39,
+        "test_D3_MOSE_video_bx": 41.06
+      },
+      "note": "paper trains one UAP per source dataset and tests on all 3 target video datasets + 3 image variants"
+    },
+    "clean_baseline_note": "Paper's Benign/Clean baseline is shown in Fig. 6, read as ~76% for SAM2-t on YouTube-VOS. Clean for DAVIS/MOSE not extracted yet.",
+    "sample_wise_ablation": {
+      "eps": "8/255 (vs UAP 10/255)",
+      "note": "paper also reports a per-sample variant UAP-SAM2*; we do not reproduce this variant (out of scope for universal-UAP baseline)"
+    }
   },
 
-  "gap_to_paper": {
-    "j_drop_gap_in_domain_v2_pp": 17.13,
-    "j_drop_gap_held_out_v2_pp": 7.68,
-    "status": "Our current reproduction is incomplete; gap to paper remains unexplained. Not a claim that the paper is unreproducible. Continue investigating.",
-    "clean_mIoU_matches_paper": true,
-    "interpretation": "SAM2 model, data pipeline, and eval protocol are correct. The unexplained attack-strength gap is on the training side only."
+  "gap_to_paper_matrix_pp": {
+    "yt_in_domain_v2_vs_paper_37_03": {
+      "our_adv_j": 53.92,
+      "paper_adv_miou": 37.03,
+      "gap": 16.89
+    },
+    "yt_held_out_v2_mean_vs_paper_37_03": {
+      "our_adv_j_mean": 37.78,
+      "our_adv_j_std": 11.1,
+      "paper_adv_miou": 37.03,
+      "gap_mean": 0.75,
+      "note": "held-out mean is nearly AT paper, but Blackwell RNG variance (±11pp on adv J absolute) makes this a coincidence-grade match rather than a replication claim. The underlying J DROP gap is different because our clean is higher."
+    },
+    "davis_v2_vs_paper_36_26": {
+      "our_adv_j": 54.81,
+      "paper_adv_miou": 36.26,
+      "gap": 18.55
+    },
+    "summary": "~17-19pp weaker attack consistently across YT-VOS in-domain and DAVIS cross-dataset. Gap is stable across datasets -> root cause is on the attack (training) side, not dataset-specific."
   },
 
   "recommended_downstream_comparison": {
-    "decoy_vs_uapsam_primary_protocol": "held_out_valid_100",
+    "decoy_vs_uapsam_primary_protocol": "davis_val (deterministic, standard benchmark)",
+    "secondary_protocols": ["held_out_valid_100 (with Blackwell-variance disclosure)", "in_domain_train_100 (paper-consistent)"],
     "uap_to_compare_against": "uap_file/YOUTUBE_v2.pth",
     "reference_numbers": {
-      "j_drop_pp": -38.32,
-      "jf_drop_pp": -28.39
+      "davis_j_drop_pp": -27.25,
+      "davis_jf_drop_pp": -27.55,
+      "yt_in_domain_j_drop_pp": -28.87
     },
-    "forbidden_phrasing": ["UAPSAM is unreproducible", "paper's claim cannot be verified"]
-  }
+    "forbidden_phrasing": [
+      "UAPSAM is unreproducible",
+      "paper's claim cannot be verified",
+      "gap is explained by prompt protocol (RULED OUT by ensemble)",
+      "gap is explained by random subset / training length (RULED OUT by paper §4.1 + Fig. 7b)"
+    ]
+  },
+
+  "open_questions_for_next_round": [
+    "Add MOSE eval to complete paper Table 1 YouTube-row cross-dataset comparison.",
+    "Re-run v1 on held-out YT with K=3 to match v2 variance sweep.",
+    "Investigate whether Blackwell non-determinism also appears on YT-VOS in-domain (only single V100 sample there).",
+    "Root-cause the attack-side 17pp gap: cannot be prompt protocol (checked), training length / subset (paper-pinned), or distractor pool (loss_fea weight 1e-6). Remaining candidates: paper's undocumented schedule details, a subtle bug in our v2 optimizer still undetected, or paper-specific training device / floating-point numerics."
+  ]
 }

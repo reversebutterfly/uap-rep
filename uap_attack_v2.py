@@ -38,7 +38,12 @@ def get_parser() -> ArgumentParser:
     parser.add_argument('--alpha', default= 2 / 255, type=float)
     parser.add_argument('--P_num', default=10, type=int)
     parser.add_argument('--prompts_num', default=256, type=int)
-    parser.add_argument('--weight_fea', default=0.000001, type=float)
+    parser.add_argument('--weight_fea', default=1.0, type=float,
+                        help="J_fa (feature-shift / InfoNCE) coefficient. "
+                             "Paper Eq. 3 says J_total = J_sa + J_fa + J_ma with "
+                             "NO lambdas (i.e. 1.0 each). Public-release default was "
+                             "1e-6, which effectively disabled J_fa. Bumped to 1.0 for "
+                             "v3 after paper deep-read (2026-04-22).")
     parser.add_argument('--loss_fea', action='store_true')
     parser.add_argument('--loss_diff', action='store_true')
     parser.add_argument('--loss_t', action='store_true')

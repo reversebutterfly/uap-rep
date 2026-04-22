@@ -12,6 +12,7 @@ from datetime import datetime
 import cv2
 import numpy as np
 import torch
+import torch.nn.functional as F
 from PIL import Image
 from matplotlib import pyplot as plt
 from torch import Tensor
@@ -413,12 +414,27 @@ def collate_fn(batch):
     buffer_list, P_list, sample_id,gt ,point = zip(*batch)
     return buffer_list, P_list, sample_id,gt,point
 def infonce_loss(adv_feature, original_feature, target_feature, temperature=0.1):
+    """Feature-shift attack loss (paper Eq. 7 J_fa).
 
+    Paper description (arXiv 2510.24195 §3.2):
+      - anchor = E_img(x̃_i) (adversarial frame feature)
+      - positive = features of OTHER videos (here: SA-V distractor `target_feature`)
+      - negative = prototype e_i of SAME video (here: `original_feature`)
+    Minimizing the loss pulls adv TOWARD target (positive) and pushes it AWAY
+    from original (negative).
+
+    Fixed 2026-04-22: switched from raw dot product (unbounded O(D)~O(1M) with
+    temperature=0.1 -> O(10^7) magnitude) to cosine similarity (bounded in
+    [-1, 1]) so that --weight_fea=1.0 (paper's Eq. 3 no-lambda convention)
+    does not dominate the BCE terms. Paper Eq. 7 itself uses cos(.,.).
+    """
     adv_feature_flat = adv_feature.reshape(1, -1)
     original_feature_flat = original_feature.reshape(1, -1)
     target_feature_flat = target_feature.reshape(1, -1)
-    similarity_adv_original = torch.matmul(adv_feature_flat, original_feature_flat.T) / temperature
-    similarity_adv_target = torch.matmul(adv_feature_flat, target_feature_flat.T) / temperature
+    similarity_adv_original = F.cosine_similarity(
+        adv_feature_flat, original_feature_flat, dim=-1) / temperature
+    similarity_adv_target = F.cosine_similarity(
+        adv_feature_flat, target_feature_flat, dim=-1) / temperature
 
     loss = -similarity_adv_target + similarity_adv_original
 

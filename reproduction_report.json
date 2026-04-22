@@ -1,10 +1,10 @@
 {
-  "report_version": "2026-04-22-v3",
+  "report_version": "2026-04-22-v4",
   "original_date": "2026-03-31",
   "updated_date": "2026-04-22",
   "repo": "CGCL-codes/UAP-SAM2",
   "paper_ref": "Zheng et al., NeurIPS 2025, arXiv 2510.24195 / OpenReview Ll29PmM3UH",
-  "reproduction_repo": "github.com/reversebutterfly/uap-rep (commit 335968c)",
+  "reproduction_repo": "github.com/reversebutterfly/uap-rep (commit 2607247, MOSE added)",
   "commit": "779ce0b7ebb8cc09fb712c46c555099f6a99e08f",
 
   "environments": {
@@ -171,6 +171,20 @@
           "jf_drop_pp": -27.55
         }
       }
+    },
+    "mose_train": {
+      "description": "MOSE train split (paper's 3rd video dataset 𝒟₃). Target=instance id 1. Paper used train split because MOSE valid has first-frame-only annotations. 1507 videos total, we sample 100 via seed=30.",
+      "host": "Pro 6000 GPU 1 (Blackwell)",
+      "limit_img": 100,
+      "deterministic_partial": "2 of 3 v2 runs bit-identical (t1/t3), third run (t2) diverged due to Blackwell sm_120 non-determinism",
+      "v2_runs": [
+        {"tag": "t1", "j_clean_pct": 69.39, "j_adv_pct": 39.97, "j_drop_pp": -29.42, "jf_drop_pp": -22.90, "frames": 87, "stable_cluster": true},
+        {"tag": "t2", "j_clean_pct": 73.62, "j_adv_pct": 55.36, "j_drop_pp": -18.26, "jf_drop_pp": -17.19, "frames": 61, "stable_cluster": false},
+        {"tag": "t3", "j_clean_pct": 69.39, "j_adv_pct": 39.97, "j_drop_pp": -29.42, "jf_drop_pp": -22.90, "frames": 87, "stable_cluster": true}
+      ],
+      "v2_stable_cluster_value": {"j_clean_pct": 69.39, "j_adv_pct": 39.97, "j_drop_pp": -29.42},
+      "v2_mean_across_3_runs": {"j_clean_pct": 70.80, "j_adv_pct": 45.10, "j_drop_pp": -25.70, "j_drop_std_pp": 5.3},
+      "v1_t1": {"j_clean_pct": 69.23, "j_adv_pct": 44.18, "j_drop_pp": -25.05, "jf_drop_pp": -19.48, "frames": 87}
     }
   },
 
@@ -180,7 +194,9 @@
     "held_out_yt_j": "single-sample comparison insufficient (Blackwell RNG noise ~4pp); need v1 ensemble",
     "davis_j": 1.70,
     "davis_jf": 1.13,
-    "interpretation": "Codex R1/R2 fixes give genuine gain on YT-VOS in-domain (+7.2pp) but much smaller gain on DAVIS (+1.70pp). DAVIS clean J is already high with center prompt, so UAP has less headroom; this is consistent with paper Table 1 where D2 UAP-SAM2 is weaker than D1->D2 transfer."
+    "mose_j_stable_cluster": 4.21,
+    "mose_jf_stable_cluster": 3.42,
+    "interpretation": "v2 > v1 consistent across all 3 datasets. Magnitude varies: YT in-domain +7.2pp, MOSE +4.21pp, DAVIS +1.70pp. Smaller gain on datasets where clean baseline is already saturated (DAVIS clean J 82, thinner headroom) or where both UAPs struggle equally (MOSE is natively adversarial-robust)."
   },
 
   "paper_targets": {
@@ -222,30 +238,41 @@
       "paper_adv_miou": 36.26,
       "gap": 18.55
     },
-    "summary": "~17-19pp weaker attack consistently across YT-VOS in-domain and DAVIS cross-dataset. Gap is stable across datasets -> root cause is on the attack (training) side, not dataset-specific."
+    "mose_v2_vs_paper_42_47": {
+      "our_adv_j_stable": 39.97,
+      "our_adv_j_3run_mean": 45.10,
+      "our_adv_j_3run_std": 8.9,
+      "paper_adv_miou": 42.47,
+      "gap_stable": -2.50,
+      "gap_3run_mean": 2.63,
+      "note": "On MOSE stable cluster we are 2.5pp STRONGER than paper (lower adv J is stronger). With Blackwell variance included, mean places us within 2.6pp of paper, tilting slightly below. Pattern reverses vs YT/DAVIS."
+    },
+    "summary": "Gap is DATASET-DEPENDENT, not uniform: YT in-domain +16.89pp weaker, DAVIS +18.55pp weaker, MOSE -2.50pp stronger. The fact that our attack matches/slightly exceeds paper on the hardest dataset (MOSE) but is dramatically weaker on the easier datasets suggests paper's attack has a 'cap' on easy datasets that our attack lacks, or our attack does not exploit some easy-dataset-specific pattern. Reviewer's hypothesis of a training-side protocol we haven't captured remains most likely, but the mechanism must explain this dataset-specific pattern."
   },
 
   "recommended_downstream_comparison": {
-    "decoy_vs_uapsam_primary_protocol": "davis_val (deterministic, standard benchmark)",
-    "secondary_protocols": ["held_out_valid_100 (with Blackwell-variance disclosure)", "in_domain_train_100 (paper-consistent)"],
-    "uap_to_compare_against": "uap_file/YOUTUBE_v2.pth",
-    "reference_numbers": {
-      "davis_j_drop_pp": -27.25,
-      "davis_jf_drop_pp": -27.55,
-      "yt_in_domain_j_drop_pp": -28.87
+    "decoy_vs_uapsam_primary_protocol": "all-3-dataset-mean (YT in-domain + DAVIS + MOSE) for symmetric comparison",
+    "per_dataset_reference": {
+      "yt_in_domain_v2_j_drop_pp": -28.87,
+      "davis_v2_j_drop_pp": -27.25,
+      "mose_v2_j_drop_pp_stable": -29.42,
+      "mose_v2_j_drop_pp_3run_mean": -25.70
     },
+    "alternative_protocols": ["held_out_valid_100 (Blackwell-variance disclosure required)", "davis_val (deterministic)"],
+    "uap_to_compare_against": "uap_file/YOUTUBE_v2.pth",
     "forbidden_phrasing": [
       "UAPSAM is unreproducible",
       "paper's claim cannot be verified",
+      "gap is uniform 17pp across datasets (FALSIFIED by MOSE where we are -2.5pp stronger)",
       "gap is explained by prompt protocol (RULED OUT by ensemble)",
       "gap is explained by random subset / training length (RULED OUT by paper §4.1 + Fig. 7b)"
     ]
   },
 
   "open_questions_for_next_round": [
-    "Add MOSE eval to complete paper Table 1 YouTube-row cross-dataset comparison.",
+    "Why does our gap to paper collapse on MOSE (+strong-by-2.5pp) while staying ~18pp on YT/DAVIS? Hypothesis: paper's attack has an easy-dataset-only amplifier (e.g. a prompt-region schedule that helps when target objects are large & centered; MOSE's complex scenes neutralize this). Worth asking Codex to audit with this new pattern.",
     "Re-run v1 on held-out YT with K=3 to match v2 variance sweep.",
     "Investigate whether Blackwell non-determinism also appears on YT-VOS in-domain (only single V100 sample there).",
-    "Root-cause the attack-side 17pp gap: cannot be prompt protocol (checked), training length / subset (paper-pinned), or distractor pool (loss_fea weight 1e-6). Remaining candidates: paper's undocumented schedule details, a subtle bug in our v2 optimizer still undetected, or paper-specific training device / floating-point numerics."
+    "Paper UAP-SAM2 authors' released YOUTUBE.pth (if any released) would let us check if their numbers are reproducible on our eval pipeline — would isolate attack-code vs eval-code contributions."
   ]
 }

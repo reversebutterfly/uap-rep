@@ -30,6 +30,7 @@ import os
 from argparse import ArgumentParser, Namespace
 import sys
 from pathlib import Path
+import numpy as np
 import torch
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
@@ -294,6 +295,11 @@ def get_parser() -> ArgumentParser:
                         help="Path to UAP tensor .pth (default: YOUTUBE_v2.pth)")
     parser.add_argument("--results_out", default=None,
                         help="Override results JSON path (default: refine-logs/heldout_jpeg_results.json)")
+    parser.add_argument("--prompt_mode", choices=["center", "random_fg"], default="center",
+                        help="Eval-time point-prompt source: center of GT mask (public-repo default) "
+                             "or a random foreground pixel (paper OpenReview Ll29PmM3UH writes 'different and random' prompts)")
+    parser.add_argument("--prompt_seed", default=0, type=int,
+                        help="Seed for random_fg prompt generation (ignored if prompt_mode=center)")
     return parser
 
 
@@ -308,11 +314,14 @@ if __name__ == "__main__":
     parser = get_parser()
     args = get_args(parser)
     seed_everything(args.seed)
+    if args.prompt_mode == 'random_fg':
+        np.random.seed(args.prompt_seed)
 
     print("=== UAP-SAM2 Held-Out JPEG Baseline Eval ===")
     print(f"  --test_dataset:  {args.test_dataset}")
     print(f"  --limit_img:     {args.limit_img}")
     print(f"  --limit_frames:  {args.limit_frames}")
+    print(f"  --prompt_mode:   {args.prompt_mode}  (seed={args.prompt_seed if args.prompt_mode=='random_fg' else 'n/a'})")
     print(f"  frame format:    JPEG (lossy)  ← JPEG-eval baseline, NOT lossless eval")
     print(f"  mIoU:            filtered (clean<0.3 skipped) — same as official code")
     print()
@@ -361,6 +370,8 @@ if __name__ == "__main__":
         "overlap_pct": overlap_info.get("overlap_pct"),
     }
     results["uap_path"] = args.uap_path
+    results["prompt_mode"] = args.prompt_mode
+    results["prompt_seed"] = args.prompt_seed if args.prompt_mode == "random_fg" else None
     if args.results_out:
         results_path = Path(args.results_out)
     else:

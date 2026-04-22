@@ -32,7 +32,6 @@ def calculate_bounding_box(gt: np.ndarray) -> Tuple[int, int, int, int]:
     return x_min, y_min, x_max, y_max
 
 def generate_random_point(gt):
-    print(type(gt))
     if not isinstance(gt, (np.ndarray, list)):
         raise TypeError("Expected a NumPy array or list for gt, but got {}".format(type(gt)))
     if isinstance(gt, list):
@@ -43,6 +42,13 @@ def generate_random_point(gt):
     random_index = np.random.randint(0, len(coords))
     x_random, y_random = coords[random_index][1], coords[random_index][0]
     return x_random, y_random
+
+
+def _pick_point_prompt(gt, args):
+    mode = getattr(args, 'prompt_mode', 'center') if args is not None else 'center'
+    if mode == 'random_fg':
+        return generate_random_point(gt)
+    return calculate_center(gt)
 
 def get_unique_colors(mask):
     reshaped_mask = mask.reshape(-1, mask.shape[-1])
@@ -99,8 +105,8 @@ class Dataset_YOUTUBE(Dataset):
                 X = sam_fwder.transform_image(image)
                 if self.args.train_prompts == 'pt':
                     print("pt")
-                    x_center, y_center = calculate_center(gt)
-                    prompt_ann = np.array([[x_center, y_center]], dtype=np.float32)
+                    x_point, y_point = _pick_point_prompt(gt, self.args)
+                    prompt_ann = np.array([[x_point, y_point]], dtype=np.float32)
                     prompts = make_prompts(prompt_ann, image)
                     P = sam_fwder.transform_prompts(*prompts)
                 if self.args.train_prompts == 'bx':
@@ -174,8 +180,8 @@ class Dataset_YOUTUBE_IMAGE(Dataset):
                 X = sam_fwder.transform_image(image)
                 if self.args.train_prompts == 'pt':
                     print("pt")
-                    x_center, y_center = calculate_center(gt)
-                    prompt_ann = np.array([[x_center, y_center]], dtype=np.float32)
+                    x_point, y_point = _pick_point_prompt(gt, self.args)
+                    prompt_ann = np.array([[x_point, y_point]], dtype=np.float32)
                     prompts = make_prompts(prompt_ann, image)
                     P = sam_fwder.transform_prompts(*prompts)
                 if self.args.train_prompts == 'bx':
